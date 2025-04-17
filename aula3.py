@@ -22,16 +22,44 @@ df_acidentes_por_cidade = pd.merge(df_acidentes_por_cidade, municipios_unicos, o
 # Ordenação dos municipios pela quantidade de acidentes
 df_acidentes_por_cidade.sort_values(by='total_acidentes', ascending=False, inplace=True)
 
+# Habitantes por cidade
+df_acidentes_por_cidade['total_acidentes_por_mil_habitantes'] = df_acidentes_por_cidade['total_acidentes'] / df_acidentes_por_cidade['qtde_habitantes'] * 1000
+top_acidentes_por_habitante = df_acidentes_por_cidade.sort_values(by='total_acidentes_por_mil_habitantes', ascending=False, inplace=True).head(5)
+
+# Frotas por cidade
+df_acidentes_por_cidade['total_acidentes_por_mil_veiculos'] = df_acidentes_por_cidade['total_acidentes'] / df_acidentes_por_cidade['frota_total'] * 1000
+top_acidentes_por_veiculo = df_acidentes_por_cidade.sort_values(by='total_acidentes_por_mil_veiculos', ascending=False, inplace=True).head(5)
+
 top5 = df_acidentes_por_cidade.head(5)
 
 # Começando a montar o gráfico para exibição no streamlit
 st.header('Top 5 cidades com mais acidentes de trânsito em Rondônia')
 # st.bar_chart(top5.set_index('municipio')['total_acidentes'])
-fig = px.bar(
+fig1 = px.bar(
     top5,
     x='municipio',
     y='total_acidentes',
     labels={'municipio': 'Municípios de Rondônia', 'total_acidentes': 'Total de acidentes'}
 )
 
-st.plotly_chart(fig)
+st.header('Top 5 cidades com mais acidentes por mil habitantes Rondônia')
+# st.bar_chart(top5.set_index('municipio')['total_acidentes'])
+fig2 = px.bar(
+    top5,
+    x='municipio',
+    y='total_acidentes_por_mil_habitantes',
+    labels={'municipio': 'Municípios de Rondônia', 'total_acidentes_por_mil_habitantes': 'Acidentes por mil habitantes'}
+)
+
+st.header('Top 5 cidades com mais acidentes por mil veículos em Rondônia')
+# st.bar_chart(top5.set_index('municipio')['total_acidentes'])
+fig3 = px.bar(
+    top5,
+    x='municipio',
+    y='total_acidentes_por_mil_veiculos',
+    labels={'municipio': 'Municípios de Rondônia', 'total_acidentes_por_mil_veiculos': 'Acidentes por mil veículos'}
+)
+
+st.plotly_chart(fig1)
+st.plotly_chart(fig2)
+st.plotly_chart(fig3)
