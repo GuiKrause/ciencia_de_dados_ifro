@@ -2,64 +2,87 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 
-# Carregar os nossos datasets
-df_acidentes = pd.read_csv("./acidentes_2022.csv")
-df_localidades = pd.read_csv("./localidades_2022.csv")
+# Título da página
+st.title("Análise de Acidentes de Trânsito por Estado")
 
-# Filtrar os dados de Rondônia
-df_acidentes = df_acidentes[df_acidentes['uf_acidente'] == "RO"]
-df_localidades = df_localidades[df_localidades['uf'] == "RO"]
+# Carregar datasets
+@st.cache_data
+def carregar_dados():
+    df_acidentes = pd.read_csv("./acidentes_2022.csv", low_memory=False)
+    df_localidades = pd.read_csv("./localidades_2022.csv")
+    return df_acidentes, df_localidades
 
-# Agrupar os dados por município, para realizar a contagem dos acidentes
-df_acidentes_por_cidade = df_acidentes.groupby('codigo_ibge').size().reset_index(name='total_acidentes')
+df_acidentes, df_localidades = carregar_dados()
 
-# Exclusão dos registros duplicados
-municipios_unicos = df_localidades[['codigo_ibge', 'municipio']].drop_duplicates(subset='codigo_ibge')
+# Verificar colunas disponíveis (debug)
+st.sidebar.subheader("Colunas disponíveis (debug)")
+if st.sidebar.checkbox("Ver colunas dos arquivos"):
+    st.sidebar.write("📄 Acidentes:", df_acidentes.columns.tolist())
+    st.sidebar.write("📄 Localidades:", df_localidades.columns.tolist())
 
-# Junção de duas tabelas
-df_acidentes_por_cidade = pd.merge(df_acidentes_por_cidade, municipios_unicos, on='codigo_ibge')
+# Menu lateral para seleção de estado
+estados_disponiveis = sorted(df_acidentes['uf_acidente'].unique())
+estado_selecionado = st.sidebar.selectbox("Selecione o Estado", ["Todos os Estados"] + estados_disponiveis)
 
-# Ordenação dos municipios pela quantidade de acidentes
-df_acidentes_por_cidade.sort_values(by='total_acidentes', ascending=False, inplace=True)
+# Filtrar os dados pelo estado selecionado ou mostrar todos os acidentes
+if estado_selecionado == "Todos os Estados":
+    df_acidentes_estado = df_acidentes
+    df_localidades_estado = df_localidades
+else:
+    df_acidentes_estado = df_acidentes[df_acidentes['uf_acidente'] == estado_selecionado]
+    df_localidades_estado = df_localidades[df_localidades['uf'] == estado_selecionado]
 
-# Habitantes por cidade
-df_acidentes_por_cidade['total_acidentes_por_mil_habitantes'] = df_acidentes_por_cidade['total_acidentes'] / df_acidentes_por_cidade['qtde_habitantes'] * 1000
-top_acidentes_por_habitante = df_acidentes_por_cidade.sort_values(by='total_acidentes_por_mil_habitantes', ascending=False, inplace=True).head(5)
+# Agrupar dados de acidentes por município
+df_acidentes_por_cidade = df_acidentes_estado.groupby('codigo_ibge').size().reset_index(name='total_acidentes')
 
-# Frotas por cidade
-df_acidentes_por_cidade['total_acidentes_por_mil_veiculos'] = df_acidentes_por_cidade['total_acidentes'] / df_acidentes_por_cidade['frota_total'] * 1000
-top_acidentes_por_veiculo = df_acidentes_por_cidade.sort_values(by='total_acidentes_por_mil_veiculos', ascending=False, inplace=True).head(5)
+# Selecionar colunas que existem
+colunas_desejadas = ['codigo_ibge', 'municipio', 'qtde_habitantes', 'frota_total']
+colunas_presentes = [col for col in colunas_desejadas if col in df_localidades_estado.columns]
+municipios_unicos = df_localidades_estado[colunas_presentes].drop_duplicates(subset='codigo_ibge')
 
-top5 = df_acidentes_por_cidade.head(5)
+# Mesclar
+df_acidentes_por_cidade = pd.merge(df_acidentes_por_cidade, municipios_unicos, on='codigo_ibge', how='left')
 
-# Começando a montar o gráfico para exibição no streamlit
-st.header('Top 5 cidades com mais acidentes de trânsito em Rondônia')
-# st.bar_chart(top5.set_index('municipio')['total_acidentes'])
-fig1 = px.bar(
-    top5,
-    x='municipio',
-    y='total_acidentes',
-    labels={'municipio': 'Municípios de Rondônia', 'total_acidentes': 'Total de acidentes'}
-)
+# Calcular indicadores, com proteção contra ausência de colunas
+if 'qtde_habitantes' in df_acidentes_por_cidade.columns:
+    df_acidentes_por_cidade['total_acidentes_por_mil_habitantes'] = (
+        df_acidentes_por_cidade['total_acidentes'] / df_acidentes_por_cidade['qtde_habitantes'].replace({0: None}) * 1000
+    )
+else:
+    df_acidentes_por_cidade['total_acidentes_por_mil_habitantes'] = None
 
-st.header('Top 5 cidades com mais acidentes por mil habitantes Rondônia')
-# st.bar_chart(top5.set_index('municipio')['total_acidentes'])
-fig2 = px.bar(
-    top5,
-    x='municipio',
-    y='total_acidentes_por_mil_habitantes',
-    labels={'municipio': 'Municípios de Rondônia', 'total_acidentes_por_mil_habitantes': 'Acidentes por mil habitantes'}
-)
+if 'frota_total' in df_acidentes_por_cidade.columns:
+    df_acidentes_por_cidade['total_acidentes_por_mil_veiculos'] = (
+        df_acidentes_por_cidade['total_acidentes'] / df_acidentes_por_cidade['frota_total'].replace({0: None}) * 1000
+    )
+else:
+    df_acidentes_por_cidade['total_acidentes_por_mil_veiculos'] = None
 
-st.header('Top 5 cidades com mais acidentes por mil veículos em Rondônia')
-# st.bar_chart(top5.set_index('municipio')['total_acidentes'])
-fig3 = px.bar(
-    top5,
-    x='municipio',
-    y='total_acidentes_por_mil_veiculos',
-    labels={'municipio': 'Municípios de Rondônia', 'total_acidentes_por_mil_veiculos': 'Acidentes por mil veículos'}
-)
+top5_por_habitante = df_acidentes_por_cidade.sort_values(by='total_acidentes_por_mil_habitantes', ascending=False).head(5)
+top5_por_veiculo = df_acidentes_por_cidade.sort_values(by='total_acidentes_por_mil_veiculos', ascending=False).head(5)
 
-st.plotly_chart(fig1)
-st.plotly_chart(fig2)
-st.plotly_chart(fig3)
+if df_acidentes_por_cidade['total_acidentes_por_mil_habitantes'].notna().any():
+    st.header(f'Top 5 por mil habitantes em {estado_selecionado}' if estado_selecionado != "Todos os Estados" else "Top 5 por mil habitantes")
+    fig2 = px.bar(top5_por_habitante, x='municipio', y='total_acidentes_por_mil_habitantes', color='total_acidentes_por_mil_habitantes')
+    st.plotly_chart(fig2)
+else:
+    st.warning("Dados de habitantes não disponíveis para este estado.")
+
+if df_acidentes_por_cidade['total_acidentes_por_mil_veiculos'].notna().any():
+    st.header(f'Top 5 por mil veículos em {estado_selecionado}' if estado_selecionado != "Todos os Estados" else "Top 5 por mil veículos")
+    fig3 = px.bar(top5_por_veiculo, x='municipio', y='total_acidentes_por_mil_veiculos', color='total_acidentes_por_mil_veiculos')
+    st.plotly_chart(fig3)
+else:
+    st.warning("Dados de frota de veículos não disponíveis para este estado.")
+
+# Mapa
+st.header(f"Mapa dos acidentes em {estado_selecionado}" if estado_selecionado != "Todos os Estados" else "Mapa de todos os acidentes")
+if 'latitude_acidente' in df_acidentes_estado.columns and 'longitude_acidente' in df_acidentes_estado.columns:
+    mapa_dados = df_acidentes_estado[['latitude_acidente', 'longitude_acidente']].dropna()
+    mapa_dados.columns = ['latitude', 'longitude']  # renomear para que o st.map entenda
+    if not mapa_dados.empty:
+        st.map(mapa_dados)
+    else:
+        st.warning("Coordenadas vazias para este estado.")
+else:
+    st.warning("Colunas de latitude e longitude não estão disponíveis no dataset.")
